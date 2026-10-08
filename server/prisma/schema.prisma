@@ -1,0 +1,302 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Authentication ───────────────────────────────────────
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String?
+  passwordSet Boolean @default(false)
+  role      String   @default("STUDENT") // ADMIN, STUDENT
+  isActive  Boolean  @default(true)
+  lastLogin DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  student        Student?
+  paymentsCreated Payment[]    @relation("PaymentCreator")
+  documentsUploaded Document[] @relation("DocumentUploader")
+  materialsUploaded StudyMaterial[] @relation("MaterialUploader")
+  testsCreated   Test[]       @relation("TestCreator")
+  incomeCreated  Income[]     @relation("IncomeCreator")
+  expenseCreated Expense[]    @relation("ExpenseCreator")
+  attendanceMarked Attendance[] @relation("AttendanceMarker")
+  auditLogs      AuditLog[]   @relation("AuditUser")
+}
+
+// ─── Core Entities ────────────────────────────────────────
+
+model Course {
+  id       String @id @default(uuid())
+  name     String @unique
+  fullName String
+  duration String
+
+  students      Student[]
+  studyMaterials StudyMaterial[]
+}
+
+model Batch {
+  id      String @id @default(uuid())
+  name    String @unique
+  year    String
+  section String
+
+  students       Student[]
+  tests          Test[]
+  studyMaterials StudyMaterial[]
+}
+
+model Subject {
+  id   String @id @default(uuid())
+  name String @unique
+  code String @unique
+
+  tests          Test[]
+  attendance     Attendance[]
+  studyMaterials StudyMaterial[]
+}
+
+// ─── Student ──────────────────────────────────────────────
+
+model Student {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  name          String
+  enrollmentNo  String   @unique
+  email         String
+  phone         String
+  parentName    String   @default("")
+  parentPhone   String   @default("")
+  address       String   @default("")
+  dob           String   @default("")
+  courseId       String
+  batchId        String
+  academicYear  String   @default("2025-2026")
+  totalFees     Float    @default(0)
+  profilePhoto  String?
+  status        String   @default("ACTIVE") // ACTIVE, INACTIVE
+  remarks       String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course        Course   @relation(fields: [courseId], references: [id])
+  batch         Batch    @relation(fields: [batchId], references: [id])
+  payments      Payment[]
+  attendance    Attendance[]
+  marks         Mark[]
+  documents     Document[]
+  reminders     Reminder[]
+  notifications Notification[]
+  feeSchedules  FeeSchedule[]
+}
+
+// ─── Finance ──────────────────────────────────────────────
+
+model Payment {
+  id               String   @id @default(uuid())
+  studentId        String
+  receiptNo        String   @unique
+  date             String
+  amount           Float
+  paymentMode      String   @default("Cash")
+  remainingBalance Float    @default(0)
+  penalty          Float    @default(0)
+  remarks          String   @default("")
+  generatedById    String
+  createdAt        DateTime @default(now())
+
+  student     Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  generatedBy User    @relation("PaymentCreator", fields: [generatedById], references: [id])
+}
+
+model FeeSchedule {
+  id        String @id @default(uuid())
+  studentId String
+  dueDate   String
+  amount    Float
+  status    String @default("PENDING") // PENDING, PAID, OVERDUE
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+}
+
+// ─── Attendance ───────────────────────────────────────────
+
+model Attendance {
+  id        String @id @default(uuid())
+  studentId String
+  subjectId String
+  date      String
+  status    String @default("PRESENT") // PRESENT, ABSENT
+  markedById String
+
+  student  Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subject  Subject @relation(fields: [subjectId], references: [id])
+  markedBy User    @relation("AttendanceMarker", fields: [markedById], references: [id])
+
+  @@unique([studentId, subjectId, date])
+}
+
+// ─── Tests & Marks ────────────────────────────────────────
+
+model Test {
+  id           String  @id @default(uuid())
+  name         String
+  subjectId    String
+  batchId      String
+  date         String
+  maxMarks     Int
+  passingMarks Int     @default(40)
+  published    Boolean @default(false)
+  createdById  String
+  createdAt    DateTime @default(now())
+
+  subject   Subject @relation(fields: [subjectId], references: [id])
+  batch     Batch   @relation(fields: [batchId], references: [id])
+  createdBy User    @relation("TestCreator", fields: [createdById], references: [id])
+  marks     Mark[]
+}
+
+model Mark {
+  id         String @id @default(uuid())
+  testId     String
+  studentId  String
+  status     String @default("PRESENT") // PRESENT, ABSENT
+  marks      Int    @default(0)
+  percentage Float  @default(0)
+  rank       Int?
+
+  test    Test    @relation(fields: [testId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([testId, studentId])
+}
+
+// ─── Documents ────────────────────────────────────────────
+
+model Document {
+  id           String   @id @default(uuid())
+  studentId    String
+  name         String
+  category     String   @default("General")
+  filePath     String
+  fileType     String   @default("")
+  fileSize     Int      @default(0)
+  status       String   @default("PENDING") // PENDING, VERIFIED
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  student    Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  uploadedBy User    @relation("DocumentUploader", fields: [uploadedById], references: [id])
+}
+
+// ─── Study Materials ──────────────────────────────────────
+
+model StudyMaterial {
+  id           String   @id @default(uuid())
+  title        String
+  subjectId    String
+  topic        String   @default("")
+  category     String   @default("Notes")
+  description  String   @default("")
+  filePath     String
+  fileType     String   @default("")
+  fileSize     Int      @default(0)
+  batchId      String
+  courseId      String
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  subject    Subject @relation(fields: [subjectId], references: [id])
+  batch      Batch   @relation(fields: [batchId], references: [id])
+  course     Course  @relation(fields: [courseId], references: [id])
+  uploadedBy User    @relation("MaterialUploader", fields: [uploadedById], references: [id])
+}
+
+// ─── Academy Finance (Admin Only) ─────────────────────────
+
+model Income {
+  id            String   @id @default(uuid())
+  date          String
+  category      String
+  amount        Float
+  paymentMethod String   @default("Cash")
+  source        String   @default("")
+  description   String   @default("")
+  referenceNo   String   @default("")
+  remarks       String   @default("")
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  createdBy User @relation("IncomeCreator", fields: [createdById], references: [id])
+}
+
+model Expense {
+  id            String   @id @default(uuid())
+  date          String
+  category      String
+  amount        Float
+  paymentMethod String   @default("Cash")
+  vendor        String   @default("")
+  description   String   @default("")
+  referenceNo   String   @default("")
+  remarks       String   @default("")
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  createdBy User @relation("ExpenseCreator", fields: [createdById], references: [id])
+}
+
+// ─── Reminders ────────────────────────────────────────────
+
+model Reminder {
+  id        String @id @default(uuid())
+  studentId String
+  title     String
+  type      String @default("General")
+  dueDate   String
+  priority  String @default("MEDIUM") // HIGH, MEDIUM, LOW
+  status    String @default("PENDING") // PENDING, COMPLETED, OVERDUE
+  notes     String @default("")
+  createdAt DateTime @default(now())
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+}
+
+// ─── Notifications ────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(uuid())
+  studentId String
+  title     String
+  message   String   @default("")
+  type      String   @default("General")
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+}
+
+// ─── Academy Settings (single row) ───────────────────────
+
+model AcademySettings {
+  id                 String @id @default(uuid())
+  name               String @default("EduPharma Group Pharmacy Academy")
+  address            String @default("Nagpur, Maharashtra, India")
+  phone              String @default("+91 98765 43210")
+  email              String @default("info@edupharmaacademy.in")
+  minAttendance      Int    @default(75)
+  passingPercentage  Int    @default(40)
+  penaltyType        String @default("daily")
+  penaltyAmount      Float  @default(50)
+  gracePeriod        Int    @default(7)
+  maxPenalty         Float  @default(2000)
+}
